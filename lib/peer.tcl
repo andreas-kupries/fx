@@ -570,6 +570,25 @@ proc ::fx::peer::MyState {statedir pv ov} {
     return [expr {$pcode eq $owner}]
 }
 
+proc ::fx::peer::IsLocked {statedir rv} {
+    debug.fx/peer {}
+    set locked [file exists $statedir/lock]
+    if {$locked} {
+	upvar 1 $rv reason
+	set reason [string trim [fileutil::cat $statedir/lock]]
+    }
+    debug.fx/peer {locked = $locked}
+    return $locked
+}
+
+proc ::fx::peer::Lock {statedir reason} {
+    debug.fx/peer {}
+    fileutil::writeFile $statedir/lock $reason
+    # This happens only once per problem, because after the lock file
+    # prevents fx from getting here until the lock is removed.
+    ::fx::mail-error $reason
+    return
+}
 
 # taken from old setup-import script.
 proc ::fx::peer::GitSetup {statedir project location} {
@@ -591,7 +610,10 @@ proc ::fx::peer::GitSetup {statedir project location} {
 	    # Abort self, and caller (exchange).
 	    return -code return
 	}
-
+	if {[IsLocked $statedir reason]} {
+	    puts [color error "  Locked: $reason"]
+	    return -code return
+	}
 	puts [color good OK]
 	return
     } else {
@@ -741,6 +763,8 @@ proc ::fx::peer::GitPull {tmp git first} {
 		|& sed -e "s|\\r|\\n|g" | sed -e {s|^|    |}
 	} msg]} {
 	    puts [color error "  Review $tmp for errors: $msg"]
+	    set statedir [file dirname $tmp]
+	    Lock $statedir "HEAD revision ($ref) missing, or other problem"	    
 	    return 0
 	}
     }
