@@ -272,14 +272,7 @@ proc ::fx::peer::state-reset {config} {
 	puts "  Ignoring non-state [color note $state]"
     }
 
-    fossil repository transaction {
-	set peers [map get fx@peer@git]
-	dict for {url last} $peers {
-	    puts "  Cleared tracked uuid for git peer [color note $url]"
-	    map remove1 fx@peer@git $url
-	    map add1    fx@peer@git $url {}
-	}
-    }
+    GitClearAll
 
     puts [color good OK]
     return
@@ -302,14 +295,7 @@ proc ::fx::peer::state-clear {config} {
 	puts "  Ignoring non-state [color note $state]"
     }
 
-    fossil repository transaction {
-	set peers [map get fx@peer@git]
-	dict for {url last} $peers {
-	    puts "  Cleared tracked uuid for git peer [color note $url]"
-	    map remove1 fx@peer@git $url
-	    map add1    fx@peer@git $url {}
-	}
-    }
+    GitClearall
 
     puts [color good OK]
     return
@@ -581,12 +567,31 @@ proc ::fx::peer::IsLocked {statedir rv} {
     return $locked
 }
 
-proc ::fx::peer::Lock {statedir reason} {
+proc ::fx::peer::Mail {statedir reason} {
     debug.fx/peer {}
-    fileutil::writeFile $statedir/lock $reason
+    #fileutil::writeFile $statedir/lock $reason
     # This happens only once per problem, because after the lock file
     # prevents fx from getting here until the lock is removed.
     ::fx::mail-error $reason
+    return
+}
+
+proc ::fx::peer::GitClearAll {} {
+    debug.fx/peer {}
+    fossil repository transaction {
+	set peers [map get fx@peer@git]
+	dict for {url last} $peers {
+	    puts "  Cleared tracked uuid for git peer [color note $url]"
+	    GitClear $url
+	}
+    }
+    return
+}
+
+proc ::fx::peer::GitClear {url} {
+    debug.fx/peer {}
+    map remove1 fx@peer@git $url
+    map add1    fx@peer@git $url {}
     return
 }
 
@@ -764,7 +769,14 @@ proc ::fx::peer::GitPull {tmp git first} {
 	} msg]} {
 	    puts [color error "  Review $tmp for errors: $msg"]
 	    set statedir [file dirname $tmp]
-	    Lock $statedir "HEAD revision ($ref) missing, or other problem"	    
+	    Mail $statedir "HEAD revision ($ref) missing, or other problem"
+	    # Auto-heal (inlined state-reset)
+	    puts "  Drop tracked uuid from state [color note $state]"
+	    GitDropLast $statedir
+	    GitClearAll
+	    # While we cannot restart the current failed operation
+	    # what we did should ensure that the next cron-cycle will
+	    # be ok and update the mirror again.
 	    return 0
 	}
     }
@@ -818,12 +830,12 @@ proc ::fx::peer::GitPush {statedir remote current} {
 }
 #-----------------------------------------------------------------------------
 
-proc  ::fx::peer::Silent {args} {
+proc ::fx::peer::Silent {args} {
     debug.fx/peer {}
     exec 2> /dev/null > /dev/null {*}$args
 }
 
-proc  ::fx::peer::Runx {args} {
+proc ::fx::peer::Runx {args} {
     debug.fx/peer {}
     exec 2>@ stderr {*}$args
 }
