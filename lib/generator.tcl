@@ -238,7 +238,7 @@ proc ::fx::mailgen::checkin {m} {
     if {$branch eq ""} { set branch <unknown> }
 
     Begin
-    Headers $project $location [Subject "Commit by $user - "] $epoch
+    Headers $project $location [Subject "($user) com ($branch): "] $epoch
     Body $sender $header
     + "Commit \[$self\]"
     +T By      $user
@@ -419,8 +419,19 @@ proc ::fx::mailgen::ticket {m} {
     dict with m {}
     CheckType {ticket change} ticket
 
+    # Rewrite timeline comment to be more suitable as mail subject
+    append prefix "($user) "
+    if {[regexp {^(.*<i>)(.*)(</i>.*)$} $ecomment -> preamble desc postamble]} {
+	set ecomment $desc
+	if {[regexp {^([^ ]*) ticket } $preamble -> state]} {
+	    append prefix "tkt ($state): "
+	} elseif {[regexp {still ([^ ]*) with} $postamble -> state]} {
+	    append prefix "tkt ($state): "
+	}
+    }
+
     Begin
-    Headers $project $location [Subject] $epoch
+    Headers $project $location [Subject $prefix] $epoch
     Body $sender $header
     + "Ticket Change \[$self\]"
     + "  \[$ecomment\]"
@@ -488,6 +499,9 @@ proc ::fx::mailgen::wiki {m} {
 
     dict with m {}
     CheckType {wiki change} wiki
+
+    # Override subject line for mail
+    set ecomment "($user) wiki: $title"
 
     Begin
     Headers $project $location [Subject] $epoch

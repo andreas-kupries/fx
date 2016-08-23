@@ -99,6 +99,7 @@ namespace eval ::fx::validate::mail-config {
     # header   text. inserted into the generated mails
     # location url. repository location, for links in the generated mail.
     # sender   string. mail address of the nominal sender, inserted into the generated mails.
+    # project  Override for the regular repository project name.
 
     # debug     boolean, low-level smtp-debugging yes/no
     # tls       boolean. (can|must) use TLS to secure smtp yes/no.
@@ -118,6 +119,7 @@ namespace eval ::fx::validate::mail-config {
 	limit     fx-aku-note-mail-limit
 	location  fx-aku-note-project-location
 	password  fx-aku-note-mail-password
+	project   fx-aku-note-project-name
 	port 	  fx-aku-note-mail-port
 	sender    fx-aku-note-mail-sender
 	suspended fx-aku-note-mail-suspended
@@ -133,6 +135,7 @@ namespace eval ::fx::validate::mail-config {
 	limit     10
 	location  {*Undefined* Please set.}
 	password  {}
+	project   {}
 	port 	  25
 	sender    {*Undefined* Please set.}
 	suspended 0

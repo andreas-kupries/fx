@@ -214,9 +214,17 @@ proc ::fx::mailer::Get {listify setting} {
 
     if {$setting eq "project-name"} {
 	# Pseudo mail config item
+	# Check for an override first.
 	set v [config get-with-default \
-		   project-name \
-		   [file rootname [file tail [fossil repository-location]]]]
+		   [mail-config internal   project] \
+		   [mail-config default-of project]]
+
+	if {$v eq {}} {
+	    # No override, use regular name, with fallback to location.
+	    set v [config get-with-default \
+		       project-name \
+		       [file rootname [file tail [fossil repository-location]]]]
+	}
     } else {
 	set v [config get-with-default \
 		   [mail-config internal   $setting] \
