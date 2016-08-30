@@ -771,7 +771,7 @@ proc ::fx::peer::GitPull {tmp git first} {
 	    set statedir [file dirname $tmp]
 	    Mail $statedir "HEAD revision ($ref) missing, or other problem"
 	    # Auto-heal (inlined state-reset)
-	    puts "  Drop tracked uuid from state [color note $state]"
+	    puts "  Drop tracked uuid from state [color note $statedir]"
 	    GitDropLast $statedir
 	    GitClearAll
 	    # While we cannot restart the current failed operation
