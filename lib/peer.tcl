@@ -295,7 +295,7 @@ proc ::fx::peer::state-clear {config} {
 	puts "  Ignoring non-state [color note $state]"
     }
 
-    GitClearall
+    GitClearAll
 
     puts [color good OK]
     return
@@ -585,6 +585,7 @@ proc ::fx::peer::GitClearAll {} {
 	    GitClear $url
 	}
     }
+    debug.fx/peer {[GitRemotes]}
     return
 }
 
@@ -593,6 +594,17 @@ proc ::fx::peer::GitClear {url} {
     map remove1 fx@peer@git $url
     map add1    fx@peer@git $url {}
     return
+}
+
+proc ::fx::peer::GitRemotes {} {
+    set lines {}
+    fossil repository transaction {
+	set peers [map get fx@peer@git]
+	dict for {url last} $peers {
+	    append lines "Remote " $url " = (" $last ")\n"
+	}
+    }
+    return $lines
 }
 
 # taken from old setup-import script.
@@ -687,11 +699,15 @@ proc ::fx::peer::GitImport {statedir project location} {
     file mkdir $tmp
     try {
 	set first   [expr {$last eq {}}]
-	set elapsed [GitPull $tmp $git $first]
-	puts [color note "  Imported new commits to git mirror in $elapsed min"]
+	set elapsed [GitPull $tmp $git $first ierror]
 
-	# Remember how far we imported.
-	GitUpdateImported $git $current
+	if {$ierror} {
+	    puts [color error "  Import error after $elapsed min"]
+	} else {
+	    puts [color note "  Imported new commits to git mirror in $elapsed min"]
+	    # Remember how far we imported.
+	    GitUpdateImported $git $current
+	}
     } finally {
 	file delete -force $tmp
     }
@@ -721,26 +737,36 @@ proc ::fx::peer::Now {} {
 }
 
 proc ::fx::peer::GitLastImported {git} {
+    debug.fx/peer {}
     set idfile $git/fossil-import-id
     if {![file exists $idfile]} {
+	debug.fx/peer {==> no file}
 	return {}
     }
-    return [string trim [fileutil::cat $idfile]]
+    set id [string trim [fileutil::cat $idfile]]
+    debug.fx/peer {==> ($id)}
+    return $id
 }
 
 proc ::fx::peer::GitUpdateImported {git current} {
+    debug.fx/peer {}
     set idfile $git/fossil-import-id
     fileutil::writeFile $idfile $current
     return
 }
 
 proc ::fx::peer::GitDropLast {statedir} {
+    debug.fx/peer {}
     set idfile $statedir/git/fossil-import-id
     file delete -force $idfile
+    debug.fx/peer {$idfile = [file exists $idfile]}
     return
 }
 
-proc ::fx::peer::GitPull {tmp git first} {
+proc ::fx::peer::GitPull {tmp git first varerr} {
+    upvar 1 $varerr ierror
+    set ierror 0
+    debug.fx/peer {}
     puts "  Pull"
 
     set begin [clock seconds]
@@ -767,17 +793,26 @@ proc ::fx::peer::GitPull {tmp git first} {
 	    Run git --bare --git-dir $tmp cat-file -e $ref \
 		|& sed -e "s|\\r|\\n|g" | sed -e {s|^|    |}
 	} msg]} {
+	    set ierror 1
 	    puts [color error "  Review $tmp for errors: $msg"]
 	    set statedir [file dirname $tmp]
 	    Mail $statedir "HEAD revision ($ref) missing, or other problem"
 	    # Auto-heal (inlined state-reset)
 	    puts "  Drop tracked uuid from state [color note $statedir]"
 	    GitDropLast $statedir
+
+	    debug.fx/peer {State}
+	    debug.fx/peer {[GitRemotes]}
 	    GitClearAll
+
+	    debug.fx/peer {Cleared}
+	    debug.fx/peer {[GitRemotes]}
 	    # While we cannot restart the current failed operation
 	    # what we did should ensure that the next cron-cycle will
 	    # be ok and update the mirror again.
-	    return 0
+
+	    file delete -force $tmp
+	    return [expr {([clock seconds] - $begin)/60}]
 	}
     }
 
