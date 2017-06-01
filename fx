@@ -22,9 +22,6 @@ package require cmdr::color
 
 debug header {[::cmdr color {black bg-cyan} [clock format [clock seconds]]] }
 
-package require fx
-package require fx::atexit
-
 # # ## ### ##### ######## ############# ######################
 
 # (1) Process all --debug flags we can find. This is done before cmdr
@@ -49,6 +46,11 @@ if {[info exists env(FX_DEBUG)]} {
 	debug on [string trim $tag]
     }
 }
+
+# # ## ### ##### ######## ############# ######################
+
+package require fx
+package require fx::atexit
 
 # # ## ### ##### ######## ############# ######################
 ## Invoke the application code.
