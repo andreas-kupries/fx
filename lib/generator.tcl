@@ -6,7 +6,7 @@
 # Meta author      {Andreas Kupries}
 # Meta category    ?
 # Meta description ?
-# Meta location    http:/core.tcl.tk/akupries/fx
+# Meta location    https://core.tcl.tk/akupries/fx
 # Meta platform    tcl
 # Meta require     sqlite3
 # Meta subject     fossil
@@ -80,7 +80,7 @@ proc ::fx::mailgen::for-error {stacktrace} {
     Begin
     Headers \
 	FX \
-	http://core.tcl.tk/akupries/fx \
+	https://core.tcl.tk/akupries/fx \
 	"FX Internal Error" [clock seconds]
     Body {} {}
     + Context
@@ -636,7 +636,7 @@ proc ::fx::mailgen::Headers {project location subject epoch} {
     + "Subject: $subject"
     + "Date:    $date"
     + "X-Fossil-FX-Note:"
-    + "X-Tool-Origin: http://core.tcl.tk/akupries/fx" ; # TODO make this ready
+    + "X-Tool-Origin: https://core.tcl.tk/akupries/fx" ; # TODO make this ready
     + "X-Fossil-FX-Project-Name: $project"
     + "X-Fossil-FX-Project-Location: $location"
     return
