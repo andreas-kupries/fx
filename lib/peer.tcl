@@ -569,9 +569,9 @@ proc ::fx::peer::IsLocked {statedir rv} {
 
 proc ::fx::peer::Mail {statedir reason} {
     debug.fx/peer {}
-    #fileutil::writeFile $statedir/lock $reason
-    # This happens only once per problem, because after the lock file
-    # prevents fx from getting here until the lock is removed.
+    fileutil::writeFile $statedir/lock $reason
+    # This happens only once per problem, because afterward the lock
+    # file prevents fx from getting here until the lock is removed.
     ::fx::mail-error $reason
     return
 }
@@ -777,10 +777,13 @@ proc ::fx::peer::GitPull {tmp git first varerr} {
     file delete -force $tmp
     file mkdir         $tmp
 
+    set dump [file dirname $tmp]/dump
+
     Run git --bare  --git-dir $tmp init \
 	|& sed -e "s|\\r|\\n|g" | sed -e {s|^|    |}
-    Run fossil export -R $src --git \
-	| git --bare --git-dir $tmp fast-import \
+
+    Run fossil export -R $src --git > $dump.current 
+    Run git --bare --git-dir $tmp fast-import < $dump.current \
 	|& sed -e "s|\\r|\\n|g" | sed -e {s|^|    |}
 
     # Ensure that the new repository contains the HEAD of the old
@@ -798,25 +801,50 @@ proc ::fx::peer::GitPull {tmp git first varerr} {
 	    set ierror 1
 	    puts [color error "  Review $tmp for errors: $msg"]
 	    set statedir [file dirname $tmp]
-	    Mail $statedir "HEAD revision ($ref) missing, or other problem"
-	    # Auto-heal (inlined state-reset)
-	    puts "  Drop tracked uuid from state [color note $statedir]"
-	    GitDropLast $statedir
 
-	    debug.fx/peer {State}
-	    debug.fx/peer {[GitRemotes]}
-	    GitClearAll
+	    lappend m "HEAD revision ($ref) missing, or other problem"
+	    lappend m {}
+	    # Introspect the state of the two repositories.
+	    lappend m old.HEAD=[string trim [fileutil::cat $git/HEAD]]
+	    foreach path [glob -nocomplain -directory $git refs/heads/*] {
+		lappend m old.[fileutil::stripPath $git ${path}]=[string trim [fileutil::cat $path]]
+	    }
+	    lappend m {}
+	    lappend m new.HEAD=[string trim [fileutil::cat $tmp/HEAD]]
+	    foreach path [glob -nocomplain -directory $tmp refs/heads/*] {
+		lappend m new.[fileutil::stripPath $tmp ${path}]=[string trim [fileutil::cat $path]]
+	    }
+	    lappend m {}
 
-	    debug.fx/peer {Cleared}
-	    debug.fx/peer {[GitRemotes]}
+	    file rename $tmp $tmp.left
+
+	    Mail $statedir [join $m \n]
+	    # Above also locks the repos against further exchanges
+
+	    # Left in state:
+	    # - git          = OLD state
+	    # - tmp          = NEW state, mismatching the OLD
+	    # - dump.last    = fast-export for the old state
+	    # - dump.current = fast-export for the new state
+
+	    # Auto-heal (inlined state-reset) -- not working anway ...
+	    #puts "  Drop tracked uuid from state [color note $statedir]"
+	    #GitDropLast $statedir
+	    #debug.fx/peer {State}
+	    #debug.fx/peer {[GitRemotes]}
+	    #GitClearAll
+	    #debug.fx/peer {Cleared}
+	    #debug.fx/peer {[GitRemotes]}
 	    # While we cannot restart the current failed operation
 	    # what we did should ensure that the next cron-cycle will
 	    # be ok and update the mirror again.
 
-	    file delete -force $tmp
+	    #file delete -force $tmp
 	    return [expr {([clock seconds] - $begin)/60}]
 	}
     }
+
+    file rename -force $dump.current $dump.last
 
     # Rename trunk to master to suit git terminology better.
     file rename $tmp/refs/heads/trunk $tmp/refs/heads/master

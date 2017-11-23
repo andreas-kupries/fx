@@ -84,7 +84,7 @@ proc ::fx::main {argv} {
 proc ::fx::mail-error {e} {
     global env
 
-    # Mailing the stacktrace can be disabled form the environment.
+    # Mailing the stacktrace can be disabled from the environment.
     # Current user of this behaviour: Testsuite.
     if {[info exists env(FX_MAIL_STACKTRACE)] && !$env(FX_MAIL_STACKTRACE)} {
 	return
