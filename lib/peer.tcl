@@ -657,9 +657,11 @@ proc ::fx::peer::GitSetup {statedir project location} {
     Run git --bare --git-dir=$git init \
 	|& sed -e "s|\\r|\\n|g" | sed -e {s|^|    |}
 
-    file rename -force \
-	$git/hooks/post-update.sample \
-	$git/hooks/post-update
+    if {[file exists $git/hooks/post-update.sample]} {
+	file rename -force \
+	    $git/hooks/post-update.sample \
+	    $git/hooks/post-update
+    }
 
     fileutil::touch     $git/git-daemon-export-ok
     fileutil::writeFile $git/description \
