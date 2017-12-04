@@ -786,63 +786,20 @@ proc ::fx::peer::GitPull {tmp git first varerr} {
     Run git --bare --git-dir $tmp fast-import < $dump.current \
 	|& sed -e "s|\\r|\\n|g" | sed -e {s|^|    |}
 
-    # Ensure that the new repository contains the HEAD of the old
-    # repository.  If something goes wrong in the import then all the
-    # commit ids get perturbed from the point of corruption on up and
-    # this test will fail. If all is ok then this id will be present
-    # in the new repo and we can push the new commits.
-
-    if {!$first} {
-	if {[catch {
-	    set ref [Runx git --bare --git-dir $git rev-parse HEAD]
-	    Run git --bare --git-dir $tmp cat-file -e $ref \
-		|& sed -e "s|\\r|\\n|g" | sed -e {s|^|    |}
-	} msg]} {
-	    set ierror 1
-	    puts [color error "  Review $tmp for errors: $msg"]
-	    set statedir [file dirname $tmp]
-
-	    lappend m "HEAD revision ($ref) missing, or other problem"
-	    lappend m {}
-	    # Introspect the state of the two repositories.
-	    lappend m old.HEAD=[string trim [fileutil::cat $git/HEAD]]
-	    foreach path [glob -nocomplain -directory $git refs/heads/*] {
-		lappend m old.[fileutil::stripPath $git ${path}]=[string trim [fileutil::cat $path]]
-	    }
-	    lappend m {}
-	    lappend m new.HEAD=[string trim [fileutil::cat $tmp/HEAD]]
-	    foreach path [glob -nocomplain -directory $tmp refs/heads/*] {
-		lappend m new.[fileutil::stripPath $tmp ${path}]=[string trim [fileutil::cat $path]]
-	    }
-	    lappend m {}
-
-	    file rename $tmp $tmp.left
-
-	    Mail $statedir [join $m \n]
-	    # Above also locks the repos against further exchanges
-
-	    # Left in state:
-	    # - git          = OLD state
-	    # - tmp          = NEW state, mismatching the OLD
-	    # - dump.last    = fast-export for the old state
-	    # - dump.current = fast-export for the new state
-
-	    # Auto-heal (inlined state-reset) -- not working anway ...
-	    #puts "  Drop tracked uuid from state [color note $statedir]"
-	    #GitDropLast $statedir
-	    #debug.fx/peer {State}
-	    #debug.fx/peer {[GitRemotes]}
-	    #GitClearAll
-	    #debug.fx/peer {Cleared}
-	    #debug.fx/peer {[GitRemotes]}
-	    # While we cannot restart the current failed operation
-	    # what we did should ensure that the next cron-cycle will
-	    # be ok and update the mirror again.
-
-	    #file delete -force $tmp
-	    return [expr {([clock seconds] - $begin)/60}]
-	}
-    }
+    # The code originally ensured that the new repository contains the
+    # HEAD of the old repository. This was done under the reasoning
+    # that only a bad import causes this to happen, with a corruption
+    # rippling forward.
+    #
+    # This code is now gone. There are legitimate situation where this
+    # can happen. Namely, changes to a commit message, timestamp of
+    # the commit, or the user who did a commit. In fossil such changes
+    # are stored in control artifacts to the side of the main history,
+    # not affecting the existing hashes. Git keeps the information we
+    # change in the main history and any change done fossil-side shows
+    # up as a rebase. Which simply means that the change started a new
+    # timeline from the point of change forward, generating a new
+    # HEAD. Exactly the situation checked here for.
 
     file rename -force $dump.current $dump.last
 
