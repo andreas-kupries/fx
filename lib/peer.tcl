@@ -409,19 +409,13 @@ proc ::fx::peer::import {config} {
     # Run the import script in a safe interpreter with just the import
     # commands. This generates internal data structures from which we
     # then create the peering links again.
+    variable imported {}
 
     set i [interp::createEmpty]
     $i alias fossil ::fx::peer::IFossil
     $i alias git    ::fx::peer::IGit
     $i eval $data
     interp delete $i
-
-    variable imported 
-
-    if {![llength $imported]} {
-	puts [color note {No peers}]
-	return
-    }
 
     if {!$extend} {
 	puts [color warning "Import replaces all existing peers ..."]
@@ -430,6 +424,11 @@ proc ::fx::peer::import {config} {
 	map delete fx@peer@git
     } else {
 	puts [color note "Import keeps the existing peers ..."]
+
+        if {![llength $imported]} {
+	    puts [color note {No peers to import}]
+	    return
+	}
     }
 
     puts "New peers ..."
