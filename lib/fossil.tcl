@@ -295,6 +295,10 @@ proc ::fx::fossil::repository-open {p} {
 
     sqlite3 ::fx::fossil::repository $location
     atexit add [list ::fx::fossil::RepositoryClose $location]
+    # Set a timeout for in case we run into a locked database. This
+    # allows us to wait this long for the lock to clear before
+    # aborting, instead of failing immediately.
+    ::fx::fossil::repository timeout 5000
     return  ::fx::fossil::repository
 }
 
