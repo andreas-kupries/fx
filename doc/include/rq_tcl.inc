@@ -58,7 +58,7 @@ to make this happen.
 relevant sources can be found at
 
 [list_begin definitions]
-[def Tcl] [uri http://core.tcl.tk/tcl/]
+[def Tcl] [uri http://core.tcl-lang.org/tcl/]
 [list_end]
 
 together with the necessary instructions on how to build it.

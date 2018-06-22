@@ -8,7 +8,7 @@
 # @@ Meta Begin
 # Package fx::util 0
 # Meta author   {Andreas Kupries}
-# Meta location https://core.tcl.tk/akupries/fx
+# Meta location https://core.tcl-lang.org/akupries/fx
 # Meta platform tcl
 # Meta summary     Internal. General utilities.
 # Meta description Internal. General utilities.

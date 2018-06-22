@@ -36,7 +36,7 @@ more inclusive
 to get everything and the kitchensink.
 
 [para] For those wishing to build and install TclOO on their own, the
-relevant sources can be found at [uri http://core.tcl.tk/tcloo]
+relevant sources can be found at [uri http://core.tcl-lang.org/tcloo]
 together with the necessary instructions on how to build it.
 
 [para] If there are problems with building, installing, or using TclOO

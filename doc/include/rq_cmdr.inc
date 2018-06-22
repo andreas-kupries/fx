@@ -3,7 +3,7 @@
 This project uses the Cmdr framework as the basis of it cli processing.
 
 [para] Please go to either the main repository at
-[uri http://core.tcl.tk/akupries/cmdr]
+[uri http://core.tcl-lang.org/akupries/cmdr]
 
 or the backup at
 [uri http://chiselapp.com/andreas_kupries/repositories/Cmdr]
