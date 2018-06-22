@@ -3,7 +3,7 @@
 # # ## ### ##### ######## ############# ######################
 
 # @@ Meta Begin
-# Package fx ?
+# Application fx 1
 # Meta author      {Andreas Kupries}
 # Meta category    ?
 # Meta description ?
@@ -62,6 +62,11 @@ proc ::fx::main {argv} {
 	debug.fx {trap - cmdline user error}
 	puts stderr "$::argv0 cmdr: [cmdr color error $e]"
 	return 1
+
+    } trap {CMDR QUIT} {e o} {
+	# Forced early return.
+	# But not an error, nor even a warning.
+	# This is a regular exit.
 
     } trap {FX} {e o} {
 	debug.fx {trap - other user error}
