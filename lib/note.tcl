@@ -1107,8 +1107,10 @@ proc ::fx::note::deliver {config} {
     # handle database locks. We undo the change when running into
     # trouble with the mail generator or mailer.
 
+    set changesx 0
     foreach {type id uuid comment} $work {
-	incr changes
+	incr changesx
+	debug.fx/note {$changesx/$changes Process $type $id $uuid $comment}
 	lassign [MailCore $uuid $type $comment $map $pinfo] recv m
 
 	if {![llength $recv]} {
@@ -1116,6 +1118,7 @@ proc ::fx::note::deliver {config} {
 	    continue
 	}
 
+	debug.fx/note {begin transaction}
 	fossil repository transaction {
 	    # (*) Set preliminary marker
 	    seen mark-notified $uuid
@@ -1142,6 +1145,7 @@ proc ::fx::note::deliver {config} {
 		}
 	    }
 	}
+	debug.fx/note {done transaction}
     }
 
     if {$changes} return
