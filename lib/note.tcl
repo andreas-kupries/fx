@@ -1092,20 +1092,41 @@ proc ::fx::note::deliver {config} {
 	exit 1
     }
 
-    seen forall-pending type id uuid comment {
-	# TODO: no mail and such when suspended.
-	# TODO: Dry run for testing.
-	# TODO: switchable progress animation
+    # TODO: no mail and such when suspended.
+    # TODO: Dry run for testing.
+    # TODO: switchable progress animation
 
+    # I. Collect all items to send notifications for.
+
+    set work {}
+    seen forall-pending type id uuid comment {
+	lappend work $type $id $uuid $comment
+    }
+
+    # II. Send notification where possible. Mark items off first, to
+    # handle database locks. We undo the change when running into
+    # trouble with the mail generator or mailer.
+
+    foreach {type id uuid comment} $work {
 	incr changes
 	lassign [MailCore $uuid $type $comment $map $pinfo] recv m
 
-	if {[llength $recv]} {
+	if {![llength $recv]} {
+	    puts [color note "Change $uuid ** ignored, no receivers"]
+	    continue
+	}
+
+	fossil repository transaction {
+	    # (*) Set preliminary marker
+	    seen mark-notified $uuid
 	    puts [color note "Change $uuid :: $comment"]
 	    try {
 		mailgen context "UUID $type $uuid"
 		mailer send $mc $recv [mailgen artifact $m] $verbose
 	    } on error {e o} {
+		# On failure to generate or send mail undo the
+		# preliminary marker placed at (*).
+		seen mark-pending $uuid
 		# HACK. REACH up into fx for a command to mail internal errors.
 		# TODO: Move fx::mail-error to a better place for such sharing.
 		set ei $::errorInfo
@@ -1120,11 +1141,7 @@ proc ::fx::note::deliver {config} {
 		    puts stderr [color error $ei]
 		}
 	    }
-	} else {
-	    puts [color note "Change $uuid ** ignored, no receivers"]
 	}
-
-        seen mark-notified $uuid
     }
 
     if {$changes} return
