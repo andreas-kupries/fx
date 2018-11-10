@@ -1299,6 +1299,9 @@ proc ::fx::note::+RX {addr} {
     +R $addr
 
     set addr [fossil user-info $addr]
+    if {[string match "*\nself-register*" $addr]} {
+	set addr [lindex [split $addr \n] 0]
+    }
     debug.fx/note {contact   = $addr}
     +R $addr
     return

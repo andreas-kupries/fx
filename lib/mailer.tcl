@@ -271,7 +271,8 @@ proc ::fx::mailer::send {config receivers corpus {verbose 0}} {
     debug.fx/mailer {}
     #if {[suspended]} return
     #if {![llength $receivers]} return
-
+    #puts (([join $receivers "))\n(("]))
+    
     if {$verbose} {
 	puts "    ================================================"
 	puts [textutil::adjust::indent $corpus {        }]
