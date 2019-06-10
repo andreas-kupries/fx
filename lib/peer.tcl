@@ -24,6 +24,7 @@ package require interp
 package require linenoise
 package require textutil::adjust
 package require try
+package require base64
 
 package require fx::fossil
 package require fx::mailer
@@ -339,31 +340,7 @@ proc ::fx::peer::exchange {config} {
 		}
 	    }
 	    git {
-		set state [Statedir]
-		GitSetup $state $project $location
-
-		set current [GitImport $state $project $location]
-
-		dict for {url last} [util dictsort $spec] {
-		    puts "Exchange [string repeat _ 40]"
-		    puts "Git [color note $url]"
-		    puts "Push content ..."
-		    puts "  State  @ $current"
-		    puts "  Remote @ $last"
-
-		    # Skip destinations which are uptodate.
-		    if {$last eq $current} {
-			puts [color note "  No new commits"]
-			puts [color good OK]
-			continue
-		    }
-
-		    # TODO: Consider catching errors here, and going
-		    #       to the next remote, in case of multiple remotes.
-
-		    GitPush $state $url $current
-		    puts [color good OK]
-		}
+		GitCycle $project $location $spec
 	    }
 	    default {
 		error "Bad peer type \"$type\", expected one of fossil, or git"
@@ -538,13 +515,48 @@ proc ::fx::peer::Statedir {} {
 		[fossil repository-location].peer-state]
 }
 
+proc ::fx::peer::Claim {statedir pcode} {
+    debug.fx/peer {}
+    fileutil::writeFile $statedir/owner $pcode
+    return
+}
+
+proc ::fx::peer::MarkerIntegrated {statedir} {
+    debug.fx/peer {}
+   return $statedir/fossil-2.9-integrated-git-export
+}
+
+proc ::fx::peer::MarkerOrchestrated {statedir} {
+    debug.fx/peer {}
+   return $statedir/git/git-daemon-export-ok
+}
+
+proc ::fx::peer::MarkIntegrated {statedir} {
+    debug.fx/peer {}
+    fileutil::touch [MarkerIntegrated]
+    return
+}
+
+proc ::fx::peer::MarkOrchestrated {statedir} {
+    debug.fx/peer {}
+    fileutil::touch [MarkerOrchestrated]
+    return
+}
+
+proc ::fx::peer::IsIntegrated {statedir} {
+    set marker [MarkerIntegrated]
+    expr {[file exists $marker] && [file isfile $marker]}
+}
+
+proc ::fx::peer::IsOrchestrated {statedir} {
+    set marker [MarkerOrchestrated]
+    expr {[file exists $marker] && [file isfile $marker]}
+}
+
 proc ::fx::peer::IsState {statedir} {
     debug.fx/peer {}
-    return [expr {[file exists      $statedir] &&
-		  [file isdirectory $statedir] &&
-		  [file exists      $statedir/git/git-daemon-export-ok] &&
-		  [file isfile      $statedir/git/git-daemon-export-ok]
-	      }]
+    return [expr {[IsIntegrated   $statedir] ||
+		  [IsOrchestrated $statedir]}]
 }
 
 proc ::fx::peer::MyState {statedir pv ov} {
@@ -573,6 +585,67 @@ proc ::fx::peer::Mail {statedir reason} {
     # file prevents fx from getting here until the lock is removed.
     ::fx::mail-error $reason
     return
+}
+
+proc ::fx::peer::GitCycle {project location spec} {
+    debug.fx/peer {}
+    set state [Statedir]
+    
+    GitSetup $state $project $location
+
+    if {[IsIntegrated $state]} {
+	# Run the fossil/git orchestration integrated in fossil itself.
+
+	dict for {url last} [util dictsort $spec] {
+	    puts "Exchange [string repeat _ 40]"
+	    puts "Git [color note $url]"
+	    puts "Push content ..."
+
+	    set curl [base64::encode -maxlen 0 $url]
+
+	    # The integrated orchestration uses separate local git
+	    # repositories, one per peer.
+	    Run fossil git export $statedir/m_$curl --autopush $url
+	    # https://username:password@github.com/username/project.git
+
+	    # TODO: Consider catching errors here, and going
+	    #       to the next remote, in case of multiple remotes.
+
+	    puts [color good OK]
+	}
+
+	return
+    }
+
+    if {[IsOrchestrated $state]} {
+	# Export using our own orchestration of fossil and git.
+
+	set current [GitImport $state $project $location]
+	dict for {url last} [util dictsort $spec] {
+	    puts "Exchange [string repeat _ 40]"
+	    puts "Git [color note $url]"
+	    puts "Push content ..."
+	    puts "  State  @ $current"
+	    puts "  Remote @ $last"
+
+	    # Skip destinations which are uptodate.
+	    if {$last eq $current} {
+		puts [color note "  No new commits"]
+		puts [color good OK]
+		continue
+	    }
+
+	    # TODO: Consider catching errors here, and going
+	    #       to the next remote, in case of multiple remotes.
+
+	    GitPush $state $url $current
+	    puts [color good OK]
+	}
+    }
+
+    # Neither Integrated, nor Orchestrated. That must not happen.
+    return -code error \
+	"Bad git state setup, neither integrated nor orchestrated"
 }
 
 proc ::fx::peer::GitClearAll {} {
@@ -632,9 +705,9 @@ proc ::fx::peer::GitSetup {statedir project location} {
 	}
 	puts [color good OK]
 	return
-    } else {
-	set pcode [config get-local project-code]
     }
+
+    set pcode [config get-local project-code]
 
     puts "  Initialize at [color note $statedir]."
 
@@ -646,28 +719,42 @@ proc ::fx::peer::GitSetup {statedir project location} {
     # This allows us to put other (more transient) state as a sibling
     # of the git directory while not requiring additional path
     # configuration keys.
-    set git [file join $statedir git]
 
-    file delete -force $statedir
-    file mkdir $git
+    if {[package vcompare [FossilVersion] 2.9] >= 0} {
+	debug.fx/peer {initialize integrated}
+	# Fossil 2.9, or higher.
+	# Use the integrated `fossil git export` command. This
+	# orchestrates everything.
 
-    set ::env(TZ) UTC
+	MarkIntegrated $statedir
+    } else {
+	debug.fx/peer {initialize orchestrated}
+	# Before 2.9, we orchestrate `fossil export --git` with base
+	# `git` commands by ourselves.
+    
+	set git [file join $statedir git]
 
-    Run git --bare --git-dir=$git init \
-	|& sed -e "s|\\r|\\n|g" | sed -e {s|^|    |}
+	file delete -force $statedir
+	file mkdir $git
 
-    if {[file exists $git/hooks/post-update.sample]} {
-	file rename -force \
-	    $git/hooks/post-update.sample \
-	    $git/hooks/post-update
+	set ::env(TZ) UTC
+
+	Run git --bare --git-dir=$git init \
+	    |& sed -e "s|\\r|\\n|g" | sed -e {s|^|    |}
+
+	if {[file exists $git/hooks/post-update.sample]} {
+	    file rename -force \
+		$git/hooks/post-update.sample \
+		$git/hooks/post-update
+	}
+
+	fileutil::writeFile $git/description \
+	    "Mirror of the $project fossil repository at $location\n"
+
+	MarkOrchestrated $statedir
     }
 
-    fileutil::touch     $git/git-daemon-export-ok
-    fileutil::writeFile $git/description \
-	"Mirror of the $project fossil repository at $location\n"
-
-    # At last, claim the initialized state directory for the project
-    fileutil::writeFile $statedir/owner $pcode
+    Claim $statedir $pcode
 
     puts [color good OK]
     debug.fx/peer {/done initialization}
@@ -850,6 +937,12 @@ proc ::fx::peer::GitPush {statedir remote current} {
     return
 }
 #-----------------------------------------------------------------------------
+
+proc ::fx::peer::FossilVersion {} {
+    debug.fx/peer {}
+    regexp {fossil version \([^ ]*\) } [Runx fossil version] -> version
+    return $version
+}
 
 proc ::fx::peer::Silent {args} {
     debug.fx/peer {}
