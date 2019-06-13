@@ -602,10 +602,12 @@ proc ::fx::peer::GitCycle {project location spec} {
 	    puts "Push content ..."
 
 	    set curl [base64::encode -maxlen 0 $url]
+	    set src  [fossil repository-location]
 
 	    # The integrated orchestration uses separate local git
 	    # repositories, one per peer.
-	    Run fossil git export $statedir/m_$curl --autopush $url
+	    Run fossil git export $state/m_$curl -R $src --autopush $url \
+		|& sed -e "s|\\r|\\n|g" | sed -e {s|^|    |}
 	    # https://username:password@github.com/username/project.git
 
 	    # TODO: Consider catching errors here, and going
@@ -641,6 +643,8 @@ proc ::fx::peer::GitCycle {project location spec} {
 	    GitPush $state $url $current
 	    puts [color good OK]
 	}
+
+	return
     }
 
     # Neither Integrated, nor Orchestrated. That must not happen.
@@ -940,7 +944,11 @@ proc ::fx::peer::GitPush {statedir remote current} {
 
 proc ::fx::peer::FossilVersion {} {
     debug.fx/peer {}
-    regexp {fossil version \([^ ]*\) } [Runx fossil version] -> version
+    set vraw [Runx fossil version]
+    debug.fx/peer {v=($vraw)}
+    set version {}
+    set match [regexp {fossil version ([^ ]*) } $vraw -> version]
+    debug.fx/peer {v=($match/$version)}
     return $version
 }
 
