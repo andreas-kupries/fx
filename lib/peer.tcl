@@ -533,23 +533,23 @@ proc ::fx::peer::MarkerOrchestrated {statedir} {
 
 proc ::fx::peer::MarkIntegrated {statedir} {
     debug.fx/peer {}
-    fileutil::touch [MarkerIntegrated]
+    fileutil::touch [MarkerIntegrated $statedir]
     return
 }
 
 proc ::fx::peer::MarkOrchestrated {statedir} {
     debug.fx/peer {}
-    fileutil::touch [MarkerOrchestrated]
+    fileutil::touch [MarkerOrchestrated $statedir]
     return
 }
 
 proc ::fx::peer::IsIntegrated {statedir} {
-    set marker [MarkerIntegrated]
+    set marker [MarkerIntegrated $statedir]
     expr {[file exists $marker] && [file isfile $marker]}
 }
 
 proc ::fx::peer::IsOrchestrated {statedir} {
-    set marker [MarkerOrchestrated]
+    set marker [MarkerOrchestrated $statedir]
     expr {[file exists $marker] && [file isfile $marker]}
 }
 
