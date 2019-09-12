@@ -3,7 +3,7 @@
 # # ## ### ##### ######## ############# ######################
 
 # @@ Meta Begin
-# Application fx 1
+# Package fx 1
 # Meta author      {Andreas Kupries}
 # Meta category    ?
 # Meta description ?
@@ -1679,6 +1679,11 @@ cmdr create fx::fx [file tail $::argv0] {
 	    description {
 		Add export to a git peer.
 	    }
+	    option machine {
+		Forcibly choose the export mode, i.e. the machinery used for exporting to git.
+		Without this option the system chooses `integrated` vs `orchestrated` based on
+		the available fossil version. Integrated requires fossil 2.9+.
+	    } { alias M ; validate [fx::vt git-export-machine] }
 	    use .not-peer-git
 	} [fx::call peer add-git]
 

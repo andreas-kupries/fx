@@ -71,7 +71,7 @@ proc ::fx::peer::list {config} {
 
     set map [Get $config]
     # dict: "fossil" + url + area -> direction
-    #       "git" + url           -> last-uuid
+    #       "git" + url           -> list (last-uuid, mach)
 
     # Restructure the map to be indexed by url, and canonicalize the
     # associated data for the table.
@@ -82,15 +82,16 @@ proc ::fx::peer::list {config} {
 		dict for {url espec} $spec {
 		    set etype $type
 		    dict for {area dir} [util dictsort $espec] {
-			dict lappend tmap $url [::list $etype $dir $area {}]
+			dict lappend tmap $url [::list $etype $dir $area {} {}]
 			# Drop type information in multiple rows of the same url
 			set etype {}
 		    }
 		}
 	    }
 	    git {
-		dict for {url last} $spec {
-		    dict lappend tmap $url [::list $type push content $last]
+		dict for {url gspec} $spec {
+		    lassign $gspec last mach
+		    dict lappend tmap $url [::list $type push content $last $mach]
 		}
 	    }
 	    default {
@@ -100,7 +101,7 @@ proc ::fx::peer::list {config} {
     }
 
     # Show the table
-    [table t {Url Type Flow Area Last} {
+    [table t {Url Type Flow Area Last Machine} {
 	foreach {u speclist} [util dictsort $tmap] {
 	    foreach spec [lsort -dict $speclist] {
 		$t add $u {*}$spec
@@ -208,11 +209,15 @@ proc ::fx::peer::add-git {config} {
     init
 
     set url [$config @peer]
+    set mach {}
+    if {[$config @machine set?]} {
+	set mach [$config @machine]
+    }
 
     puts -nonewline "  Adding git \"$url push content\" ... "
     flush stdout
 
-    AddGit $url {}
+    AddGit $url {} $mach
     return
 }
 
@@ -315,7 +320,7 @@ proc ::fx::peer::exchange {config} {
 
     set map [Get $config]
     # dict: "fossil" + url + area -> direction
-    #       "git" + url           -> last-uuid
+    #       "git" + url           -> list (last-uuid, mach)
 
     # Note: The dictsort means that fossil peers are handled before
     # git peers. That is good because it means that any new content
@@ -363,8 +368,8 @@ proc ::fx::peer::export {config} {
 	    lappend data [::list fossil $area $dir $url]
 	}
     }
-    dict for {url last} [map get fx@peer@git] {
-	lappend data [::list git $url $last]
+    dict for {url spec} [map get fx@peer@git] {
+	lappend data [::list git $url {*}$spec]
     }
 
     set    chan [util open [$config @output]]
@@ -416,7 +421,7 @@ proc ::fx::peer::import {config} {
 
 	switch -exact -- $type {
 	    fossil { AddFossil $url {*}$details }
-	    git    { AddGit    $url $details }
+	    git    { AddGit    $url {*}$details }
 	    default {
 		error "Bad peer type \"$type\", expected one of fossil, or git"
 	    }
@@ -490,7 +495,7 @@ proc ::fx::peer::AddFossil {url dir area} {
     return
 }
 
-proc ::fx::peer::AddGit {url last} {
+proc ::fx::peer::AddGit {url last {mach {}}} {
     debug.fx/peer {}
 
     set peers [map get fx@peer@git]
@@ -500,7 +505,27 @@ proc ::fx::peer::AddGit {url last} {
 	return
     }
 
-    map add1 fx@peer@git $url {}
+    if {($mach eq "integrated") && ([package vcompare [FossilVersion] 2.9] < 0)} {
+	puts [color error {Integrated machine not supported by available fossil. Need version 2.9+.}]
+	puts [color note {Ignored}]
+	return
+    }
+    
+    if {[dict size $peers]} {
+	set themach [lindex $peers 1]
+	if {$themach ne $mach} {
+	    if {$mach eq {}} {
+		# Automatic adapts to existing machinery
+		set mach $themach
+	    } else {
+		puts [color error {Machine mismatch.}]
+		puts [color note {Ignored}]
+		return
+	    }
+	}
+    }
+    
+    map add1 fx@peer@git $url [list {} $mach]
     puts [color good OK]
     return
 }
@@ -591,16 +616,20 @@ proc ::fx::peer::GitCycle {project location spec} {
     debug.fx/peer {}
     set state [Statedir]
     
-    GitSetup $state $project $location
+    GitSetup $state $project $location [lindex $spec 1]
 
     if {[IsIntegrated $state]} {
 	# Run the fossil/git orchestration integrated in fossil itself.
 
-	dict for {url last} [util dictsort $spec] {
+	dict for {url _} [util dictsort $spec] {
+	    lassign $_ last mach
+	    # Assert: mach == integrated
+	    
 	    puts "Exchange [string repeat _ 40]"
 	    puts "Git [color note $url]"
 	    puts "Push content ..."
-
+	    puts "  Machine @ $mach"
+	    
 	    set curl [base64::encode -maxlen 0 $url]
 	    set src  [fossil repository-location]
 
@@ -623,12 +652,16 @@ proc ::fx::peer::GitCycle {project location spec} {
 	# Export using our own orchestration of fossil and git.
 
 	set current [GitImport $state $project $location]
-	dict for {url last} [util dictsort $spec] {
+	dict for {url _} [util dictsort $spec] {
+	    lassign $_ last mach
+	    # Assert: mach == orchestrated
+	    
 	    puts "Exchange [string repeat _ 40]"
 	    puts "Git [color note $url]"
 	    puts "Push content ..."
-	    puts "  State  @ $current"
-	    puts "  Remote @ $last"
+	    puts "  State   @ $current"
+	    puts "  Remote  @ $last"
+	    puts "  Machine @ $mach"
 
 	    # Skip destinations which are uptodate.
 	    if {$last eq $current} {
@@ -640,7 +673,7 @@ proc ::fx::peer::GitCycle {project location spec} {
 	    # TODO: Consider catching errors here, and going
 	    #       to the next remote, in case of multiple remotes.
 
-	    GitPush $state $url $current
+	    GitPush $state $url $current $mach
 	    puts [color good OK]
 	}
 
@@ -656,19 +689,20 @@ proc ::fx::peer::GitClearAll {} {
     debug.fx/peer {}
     fossil repository transaction {
 	set peers [map get fx@peer@git]
-	dict for {url last} $peers {
+	dict for {url spec} $peers {
+	    lassign $spec last mach
 	    puts "  Cleared tracked uuid for git peer [color note $url]"
-	    GitClear $url
+	    GitClear $url $mach
 	}
     }
     debug.fx/peer {[GitRemotes]}
     return
 }
 
-proc ::fx::peer::GitClear {url} {
+proc ::fx::peer::GitClear {url mach} {
     debug.fx/peer {}
     map remove1 fx@peer@git $url
-    map add1    fx@peer@git $url {}
+    map add1    fx@peer@git $url [list {} $mach]
     return
 }
 
@@ -676,15 +710,16 @@ proc ::fx::peer::GitRemotes {} {
     set lines {}
     fossil repository transaction {
 	set peers [map get fx@peer@git]
-	dict for {url last} $peers {
-	    append lines "Remote " $url " = (" $last ")\n"
+	dict for {url spec} $peers {
+	    lassign $spec last mach
+	    append lines "Remote " $url " = (" $last "), $mach\n"
 	}
     }
     return $lines
 }
 
 # taken from old setup-import script.
-proc ::fx::peer::GitSetup {statedir project location} {
+proc ::fx::peer::GitSetup {statedir project location mach} {
     debug.fx/peer {}
 
     puts "Exchange [string repeat _ 40]"
@@ -724,17 +759,24 @@ proc ::fx::peer::GitSetup {statedir project location} {
     # of the git directory while not requiring additional path
     # configuration keys.
 
-    if {[package vcompare [FossilVersion] 2.9] >= 0} {
+    if {$mach eq {}} {
+	if {[package vcompare [FossilVersion] 2.9] >= 0} {
+	    # Fossil 2.9, or higher. We can use the integrated `fossil
+	    # git export` command. It orchestrates everything by itself.
+	    set mach integrated
+	} else {
+	    set mach orchestrated
+	}
+    }
+    
+    if {$mach eq "integrated"} {
 	debug.fx/peer {initialize integrated}
-	# Fossil 2.9, or higher.
-	# Use the integrated `fossil git export` command. This
-	# orchestrates everything.
 
 	MarkIntegrated $statedir
     } else {
 	debug.fx/peer {initialize orchestrated}
-	# Before 2.9, we orchestrate `fossil export --git` with base
-	# `git` commands by ourselves.
+	# Before 2.9 we have to orchestrate `fossil export --git` with
+	# base `git` commands by ourselves.
     
 	set git [file join $statedir git]
 
@@ -873,7 +915,8 @@ proc ::fx::peer::GitPull {tmp git first varerr} {
 	|& sed -e "s|\\r|\\n|g" | sed -e {s|^|    |}
 
     Run fossil export -R $src --git > $dump.current 
-    Run git --bare --git-dir $tmp fast-import < $dump.current \
+    Run git --bare --git-dir $tmp fast-import --force \
+	< $dump.current \
 	|& sed -e "s|\\r|\\n|g" | sed -e {s|^|    |}
 
     # The code originally ensured that the new repository contains the
@@ -921,7 +964,7 @@ proc ::fx::peer::GitPull {tmp git first varerr} {
     return $elapsed
 }
 
-proc ::fx::peer::GitPush {statedir remote current} {
+proc ::fx::peer::GitPush {statedir remote current mach} {
     # Perform garbage collect as required
     set git $statedir/git
 
@@ -937,7 +980,7 @@ proc ::fx::peer::GitPush {statedir remote current} {
     # Update the local per-remote state, record the last uuid which is
     # now pushed to it.
     map remove1 fx@peer@git $remote
-    map add1    fx@peer@git $remote $current
+    map add1    fx@peer@git $remote [list $current $mach]
     return
 }
 #-----------------------------------------------------------------------------
@@ -974,6 +1017,7 @@ proc ::fx::peer::Get {config} {
     #
     # dict: "fossil" + url + area -> direction
     #       "git" + url           -> last-uuid
+    # TODO? git mach ?
 
     set map {}
 
@@ -996,8 +1040,8 @@ proc ::fx::peer::Get {config} {
     # II. Git peers.
     # Note how the configuration contains state information.
     # (Last uuid pushed to git mirror).
-    dict for {url last} [map get fx@peer@git] {
-	dict set map git $url $last
+    dict for {url spec} [map get fx@peer@git] {
+	dict set map git $url $spec
     }
     return $map
 }
@@ -1015,7 +1059,7 @@ proc ::fx::peer::init {} {
     # above will still validate the data they get from the repository
 
     # fx@peer@fossil: repo url -> dict (area dir ...)
-    # fx@peer@git   : repo url -> last uuid sync'd so far.
+    # fx@peer@git   : repo url -> list (last uuid sync'd so far, mach)
 
     foreach map {
 	fx@peer@fossil
