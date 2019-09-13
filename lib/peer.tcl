@@ -525,7 +525,7 @@ proc ::fx::peer::AddGit {url last {mach {}}} {
 	}
     }
     
-    map add1 fx@peer@git $url [list {} $mach]
+    map add1 fx@peer@git $url [::list {} $mach]
     puts [color good OK]
     return
 }
@@ -702,7 +702,7 @@ proc ::fx::peer::GitClearAll {} {
 proc ::fx::peer::GitClear {url mach} {
     debug.fx/peer {}
     map remove1 fx@peer@git $url
-    map add1    fx@peer@git $url [list {} $mach]
+    map add1    fx@peer@git $url [::list {} $mach]
     return
 }
 
@@ -1068,7 +1068,7 @@ proc ::fx::peer::GitFilter {infile outfile} {
 	    # check confused user/email :
 	    if {[regexp {\S+@\S+} $usr] &&
 		![regexp {\S+@\S+} $email]} {
-		lassign [list $usr $email] email usr
+		lassign [::list $usr $email] email usr
 		set line "committer $usr <${email}> $rest"
 	    }
 	} elseif {!$commit} {
