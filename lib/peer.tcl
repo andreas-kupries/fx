@@ -914,9 +914,10 @@ proc ::fx::peer::GitPull {tmp git first varerr} {
     Run git --bare  --git-dir $tmp init \
 	|& sed -e "s|\\r|\\n|g" | sed -e {s|^|    |}
 
-    Run fossil export -R $src --git > $dump.current 
+    Run fossil export -R $src --git > $dump.current
+    GitFilter $dump.current $dump.filtered
     Run git --bare --git-dir $tmp fast-import --force \
-	< $dump.current \
+	< $dump.filtered \
 	|& sed -e "s|\\r|\\n|g" | sed -e {s|^|    |}
 
     # The code originally ensured that the new repository contains the
@@ -924,7 +925,7 @@ proc ::fx::peer::GitPull {tmp git first varerr} {
     # that only a bad import causes this to happen, with a corruption
     # rippling forward.
     #
-    # This code is now gone. There are legitimate situation where this
+    # This code is now gone. There are legitimate situations where this
     # can happen. Namely, changes to a commit message, timestamp of
     # the commit, or the user who did a commit. In fossil such changes
     # are stored in control artifacts to the side of the main history,
@@ -980,9 +981,129 @@ proc ::fx::peer::GitPush {statedir remote current mach} {
     # Update the local per-remote state, record the last uuid which is
     # now pushed to it.
     map remove1 fx@peer@git $remote
-    map add1    fx@peer@git $remote [list $current $mach]
+    map add1    fx@peer@git $remote [::list $current $mach]
     return
 }
+
+proc ::fx::peer::GitFilter {infile outfile} {
+    debug.fx/peer {}
+
+    set infile  [open $infile r]
+    set outfile [open $outfile w]
+
+    # -------------------------------------
+    # Filter example for fossil export, using tcl.
+    # Makes export backwards compatible to export of fossil before version 1.3.x
+    # -------------------------------------
+    # Wrap committer, because:
+    #   - fossil since 1.3x has confused user name and email (committer / author field wrong)
+    #   - fossil before 1.3x has exported a user name in email field, so thus will prevent a rebase of whole tree
+    # Remove trailing newline at end of message
+    # -------------------------------------
+    # Copyright (c) 2015 Serg G. Brester (sebres)
+    # Modified (reduced) by Andreas Kupries for fx.
+    # -------------------------------------
+
+    # Filter operation, input to output, large buffers (1000K, i.e. just shy of 1M)
+    fconfigure $infile  -encoding binary -translation lf -eofchar {} -buffersize 1024000
+    fconfigure $outfile -encoding binary -translation lf -eofchar {} -buffersize 1024000
+
+    # State flags - Active when the current command is controlled by a
+    # lead-in command, `commit`, or `tag`. Only one of the flags can
+    # be set at any time. It is possible to have none set.
+    set commit 0
+    set tag    0
+
+    # Iterate over the commands in the dump
+    while 1 {
+	# Get command
+	set line [::gets $infile]
+	if {$line == {} && [::eof $infile]} {
+	    break
+	}
+
+	# Handle a data block not controlled by a tag - The block
+	# contains either a commit message (when under control of a
+	# commit) or a blob (any other situation)
+	if {!$tag && [regexp {^data\s+(\d+)$} $line _ n]} {
+	    ## Read the block, note binary!, remember blob
+	    fconfigure $infile  -translation binary
+	    fconfigure $outfile -translation binary
+	    set data [read $infile $n]
+
+	    # Tweak commit messages: Remove trailing whitespace, replace by single EOL.
+	    if {$commit} {
+		set dorg $data
+		# because of conflict resp. completely different
+		# messages handling between 1.2.x and 1.3.x, not
+		# possible to normalize it, so just trim trailing
+		# spaces, then add exact one newline, because of
+		# export/import:
+		if {[regsub {\s+$} $data "\n" data] ||
+		    [string length $dorg] != [string length $data]} {
+		    set line "data [string length $data]"
+		}
+		# The commit message is the last element started by a
+		# commit command. Control ceases.
+		set commit 0
+	    }
+
+	    ## Write the (possibly modified) data block, then go back
+	    ## to regular (line) translation
+	    ::puts $outfile $line
+	    ::puts -nonewline $outfile $data
+	    fconfigure $infile  -translation lf
+	    fconfigure $outfile -translation lf
+
+	    # Go to next command
+	    continue
+	}
+
+	# Not a data block, some other command
+    
+	if {[regexp {^committer\s+} $line] &&
+	    [regexp {^committer\s+([^<]+)\s+\<(.+)\>\s+(.*)$} $line _ usr email rest]} {
+	    # recognize commit, wrap committer :
+	    set commit 1; set tag 0
+	    # check confused user/email :
+	    if {[regexp {\S+@\S+} $usr] &&
+		![regexp {\S+@\S+} $email]} {
+		lassign [list $usr $email] email usr
+		set line "committer $usr <${email}> $rest"
+	    }
+	} elseif {!$commit} {
+	    # Not in a commit section.
+	    if {!$tag && [regexp {^tag\s+(.+)$} $line _ ref]} {
+		# Not in a tag, and recognized a tag lead-in command, thus
+		# a tag section begins.
+		set tag 1
+		# Rewrite to a command where the importer will accept
+		# multiple refs of the same name.
+		set line "reset refs/tags/$ref"
+	    } elseif {$tag} {
+		# In a tag section; drop tagger information, and empty
+		# tag messages.
+		if {[regexp {^tagger\s} $line]} {
+		    # ignore "tagger <tagger>" within mode "reset_tags" ...
+		    if {[incr tag] > 2} {set tag 0}
+		    continue
+		} elseif {[regexp {^data\s+0$} $line]} {
+		    # ignore "data 0" within mode "reset_tags" ...
+		    if {[incr tag] > 2} {set tag 0}
+		    continue
+		}
+	    }
+	}
+
+	# Write the (possibly modified) command.
+	::puts $outfile $line
+    }
+
+    close $infile
+    close $outfile
+    return
+}
+
 #-----------------------------------------------------------------------------
 
 proc ::fx::peer::FossilVersion {} {
